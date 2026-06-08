@@ -363,6 +363,21 @@ def debug_playwright():
         )
     })
 
+@app.route("/debug-chromium")
+def debug_chromium():
+    import os
+    from flask import jsonify
+
+    encontrados = []
+
+    for root, dirs, files in os.walk("/opt/render/project/.playwright"):
+        for f in files:
+            encontrados.append(os.path.join(root, f))
+
+    return jsonify({
+        "archivos": encontrados[:200]
+    })
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
