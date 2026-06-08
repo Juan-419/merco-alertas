@@ -425,6 +425,7 @@ def construir_mensaje_telegram(
         "🔗 https://mercoapp.com/categoria-producto/ofertas/"
     )
 
+
     return "\n".join(partes)
 
 def revisar_ofertas():
