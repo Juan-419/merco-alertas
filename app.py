@@ -339,16 +339,40 @@ def construir_email_html(nuevas, precio_baja, precio_sube, todas):
 </body></html>"""
 
 def enviar_email(asunto, html):
-    msg            = MIMEMultipart("alternative")
-    msg["Subject"] = asunto
-    msg["From"]    = GMAIL_USER
-    msg["To"]      = RECIPIENT
-    msg.attach(MIMEText(html, "html", "utf-8"))
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(GMAIL_USER, GMAIL_PASSWORD)
-        server.sendmail(GMAIL_USER, RECIPIENT, msg.as_string())
-    log.info(f"Email enviado a {RECIPIENT}")
 
+    log.info("Preparando email...")
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = asunto
+    msg["From"] = GMAIL_USER
+    msg["To"] = RECIPIENT
+
+    msg.attach(MIMEText(html, "html", "utf-8"))
+
+    log.info("Conectando a Gmail...")
+
+    with smtplib.SMTP_SSL(
+        "smtp.gmail.com",
+        465,
+        timeout=30
+    ) as server:
+
+        log.info("Login Gmail...")
+
+        server.login(
+            GMAIL_USER,
+            GMAIL_PASSWORD
+        )
+
+        log.info("Enviando correo...")
+
+        server.sendmail(
+            GMAIL_USER,
+            RECIPIENT,
+            msg.as_string()
+        )
+
+    log.info(f"Email enviado a {RECIPIENT}")
 
 # ── Job principal ─────────────────────────────────────────────────────────────
 
@@ -420,11 +444,16 @@ def index():
 
 @app.route("/revisar-ahora")
 def revisar_ahora():
-    try:
-        revisar_ofertas()
-        return jsonify({"status": "ok", "mensaje": "Revisión ejecutada. Revisa tu correo."})
-    except Exception as e:
-        return jsonify({"status": "error", "detalle": str(e)}), 500
+
+    threading.Thread(
+        target=revisar_ofertas,
+        daemon=True
+    ).start()
+
+    return jsonify({
+        "status": "ok",
+        "mensaje": "Revisión iniciada en segundo plano"
+    })
 
 @app.route("/estado")
 def estado():
