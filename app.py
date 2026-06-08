@@ -10,6 +10,8 @@ from flask import Flask, jsonify
 from playwright.sync_api import sync_playwright
 import pytz
 
+
+
 # ── Render / Playwright ────────────────────────────────────────────────────────
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/render/project/.playwright")
 
@@ -19,6 +21,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 log = logging.getLogger(__name__)
+
+lock_revision = threading.Lock()
 
 app = Flask(__name__)
 
@@ -127,22 +131,16 @@ def scrapear_ofertas():
                 page = context.new_page()
                 log.info("Página creada")
 
-                log.info("Entrando a home...")
-                page.goto(
-                    "https://mercoapp.com/",
-                    wait_until="domcontentloaded",
-                    timeout=30000
-                )
-                page.wait_for_timeout(2000)
 
-                log.info("Entrando a ofertas...")
+                log.info("Entrando directamente a ofertas...")
                 page.goto(
                     OFERTAS_URL,
-                    wait_until="domcontentloaded",
-                    timeout=30000
+                    wait_until="networkidle",
+                    timeout=60000
                 )
 
-                page.wait_for_timeout(3000)
+                page.wait_for_timeout(5000)
+
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 page.wait_for_timeout(2000)
 
@@ -429,51 +427,67 @@ def construir_mensaje_telegram(
     return "\n".join(partes)
 
 def revisar_ofertas():
-    log.info("=== Revisión MercoApp iniciada ===")
-
-    anterior = cargar_estado()
-    actual = scrapear_ofertas()
-
-    if not actual:
-        log.warning("No se obtuvieron ofertas. No se envía notificación.")
+    if not lock_revision.acquire(blocking=False):
         return {
-            "status": "sin_datos",
-            "mensaje": "No se pudieron scrapear ofertas."
+            "status": "ocupado",
+            "mensaje": "Ya hay una revisión en curso"
         }
 
-    nuevas, precio_baja, precio_sube = detectar_cambios(anterior, actual)
+    try:
+        log.info("=== Revisión MercoApp iniciada ===")
 
-    if not (nuevas or precio_baja or precio_sube):
-        log.info("Sin cambios detectados. No se envía notificación.")
+        anterior = cargar_estado()
+        actual = scrapear_ofertas()
+
+        if not actual:
+            log.warning("No se obtuvieron ofertas. No se envía notificación.")
+            return {
+                "status": "sin_datos",
+                "mensaje": "No se pudieron scrapear ofertas."
+            }
+
+        nuevas, precio_baja, precio_sube = detectar_cambios(
+            anterior,
+            actual
+        )
+
+        if not (nuevas or precio_baja or precio_sube):
+            log.info("Sin cambios detectados. No se envía notificación.")
+            guardar_estado(actual)
+            return {
+                "status": "sin_cambios",
+                "total": len(actual)
+            }
+
+        mensaje = construir_mensaje_telegram(
+            nuevas,
+            precio_baja,
+            precio_sube,
+            len(actual)
+        )
+
+        enviar_telegram(mensaje)
+
         guardar_estado(actual)
-        return {
-            "status": "sin_cambios",
+
+        resultado = {
+            "status": "ok",
+            "nuevas": len(nuevas),
+            "bajaron": len(precio_baja),
+            "subieron": len(precio_sube),
             "total": len(actual)
         }
 
-    mensaje = construir_mensaje_telegram(
-    nuevas,
-    precio_baja,
-    precio_sube,
-    len(actual)
-    )
+        log.info(
+            f"Listo. Nuevas: {len(nuevas)} | "
+            f"Bajaron: {len(precio_baja)} | "
+            f"Subieron: {len(precio_sube)}"
+        )
 
-    enviar_telegram(mensaje)
+        return resultado
 
-    guardar_estado(actual)
-
-    resultado = {
-        "status": "ok",
-        "nuevas": len(nuevas),
-        "bajaron": len(precio_baja),
-        "subieron": len(precio_sube),
-        "total": len(actual)
-    }
-    log.info(
-        f"Listo. Nuevas: {len(nuevas)} | Bajaron: {len(precio_baja)} | Subieron: {len(precio_sube)}"
-    )
-    return resultado
-
+    finally:
+        lock_revision.release()
 
 @app.route("/")
 def index():
