@@ -113,6 +113,7 @@ def scrapear_ofertas():
                     "--disable-blink-features=AutomationControlled",
                 ],
             )
+            log.info("Chromium abierto correctamente")
 
             try:
                 context = browser.new_context(
@@ -124,17 +125,20 @@ def scrapear_ofertas():
                     locale="es-CO",
                     viewport={"width": 390, "height": 844},
                 )
+                log.info("Contexto creado")
 
                 page = context.new_page()
+                log.info("Página creada")
 
+                log.info("Entrando a home...")
                 page.goto(
                     "https://mercoapp.com/",
                     wait_until="domcontentloaded",
                     timeout=30000
                 )
-
                 page.wait_for_timeout(2000)
 
+                log.info("Entrando a ofertas...")
                 page.goto(
                     OFERTAS_URL,
                     wait_until="domcontentloaded",
@@ -145,61 +149,75 @@ def scrapear_ofertas():
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 page.wait_for_timeout(2000)
 
+                # Espera razonable para que aparezcan productos
+                try:
+                    page.wait_for_selector(
+                        "li.product, article.product, div.product",
+                        timeout=15000
+                    )
+                except Exception:
+                    log.warning("No apareció el selector de productos a tiempo")
+
                 items = page.query_selector_all("li.product, article.product, div.product")
                 log.info(f"Elementos producto encontrados: {len(items)}")
 
                 for item in items:
-                    nombre_tag = item.query_selector(
-                        ".woocommerce-loop-product__title, h2, h3"
-                    )
-                    if not nombre_tag:
-                        continue
+                    try:
+                        nombre_tag = item.query_selector(
+                            ".woocommerce-loop-product__title, h2, h3"
+                        )
+                        if not nombre_tag:
+                            continue
 
-                    nombre = nombre_tag.inner_text().strip()
-                    if not nombre:
-                        continue
+                        nombre = nombre_tag.inner_text().strip()
+                        if not nombre:
+                            continue
 
-                    precio_ins = item.query_selector("ins .woocommerce-Price-amount, ins bdi")
-                    precio_del = item.query_selector("del .woocommerce-Price-amount, del bdi")
-                    precio_unico = item.query_selector(
-                        ".woocommerce-Price-amount:not(ins *):not(del *), bdi:not(ins *):not(del *)"
-                    )
-
-                    link_tag = item.query_selector("a.woocommerce-loop-product__link, a")
-                    img_tag = item.query_selector("img")
-
-                    precio_nuevo_txt = precio_ins.inner_text().strip() if precio_ins else None
-                    precio_original_txt = precio_del.inner_text().strip() if precio_del else None
-                    precio_unico_txt = precio_unico.inner_text().strip() if precio_unico else None
-                    precio_display = precio_nuevo_txt or precio_unico_txt
-
-                    link = OFERTAS_URL
-                    if link_tag:
-                        href = link_tag.get_attribute("href")
-                        if href:
-                            link = urljoin(OFERTAS_URL, href)
-
-                    imagen = ""
-                    if img_tag:
-                        imagen = (
-                            img_tag.get_attribute("src")
-                            or img_tag.get_attribute("data-src")
-                            or ""
+                        precio_ins = item.query_selector("ins .woocommerce-Price-amount, ins bdi")
+                        precio_del = item.query_selector("del .woocommerce-Price-amount, del bdi")
+                        precio_unico = item.query_selector(
+                            ".woocommerce-Price-amount:not(ins *):not(del *), bdi:not(ins *):not(del *)"
                         )
 
-                    productos[nombre] = {
-                        "precio_nuevo": precio_nuevo_txt,
-                        "precio_original": precio_original_txt,
-                        "precio_display": precio_display,
-                        "link": link,
-                        "imagen": imagen,
-                    }
+                        link_tag = item.query_selector("a.woocommerce-loop-product__link, a")
+                        img_tag = item.query_selector("img")
+
+                        precio_nuevo_txt = precio_ins.inner_text().strip() if precio_ins else None
+                        precio_original_txt = precio_del.inner_text().strip() if precio_del else None
+                        precio_unico_txt = precio_unico.inner_text().strip() if precio_unico else None
+                        precio_display = precio_nuevo_txt or precio_unico_txt
+
+                        link = OFERTAS_URL
+                        if link_tag:
+                            href = link_tag.get_attribute("href")
+                            if href:
+                                link = urljoin(OFERTAS_URL, href)
+
+                        imagen = ""
+                        if img_tag:
+                            imagen = (
+                                img_tag.get_attribute("src")
+                                or img_tag.get_attribute("data-src")
+                                or ""
+                            )
+
+                        productos[nombre] = {
+                            "precio_nuevo": precio_nuevo_txt,
+                            "precio_original": precio_original_txt,
+                            "precio_display": precio_display,
+                            "link": link,
+                            "imagen": imagen,
+                        }
+
+                    except Exception as e:
+                        log.warning(f"Error procesando un producto: {e}")
 
             finally:
                 browser.close()
+                log.info("Chromium cerrado")
 
-    except Exception as e:
-        log.error(f"Error en scraping: {e}")
+    except Exception:
+        log.exception("Error en scrapear_ofertas()")
 
     log.info(f"Ofertas scrapeadas: {len(productos)}")
     return productos
@@ -466,15 +484,17 @@ def index():
         "nota": "Usa /revisar-ahora para disparar una revisión manual."
     })
 
-
 @app.route("/revisar-ahora")
 def revisar_ahora():
-    threading.Thread(target=revisar_ofertas, daemon=True).start()
-    return jsonify({
-        "status": "ok",
-        "mensaje": "Revisión iniciada en segundo plano"
-    })
-
+    try:
+        resultado = revisar_ofertas()
+        return jsonify(resultado)
+    except Exception as e:
+        log.exception("Error en /revisar-ahora")
+        return jsonify({
+            "status": "error",
+            "detalle": str(e)
+        }), 500
 
 @app.route("/estado")
 def estado():
