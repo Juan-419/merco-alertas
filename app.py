@@ -9,6 +9,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
 
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/render/project/.playwright"
+
 from playwright.sync_api import sync_playwright
 from flask import Flask, jsonify
 
@@ -346,6 +348,20 @@ def revisar_ahora():
 def estado():
     ofertas = cargar_estado()
     return jsonify({"total": len(ofertas), "ofertas": ofertas})
+
+
+@app.route("/debug-playwright")
+def debug_playwright():
+    import os
+
+    return jsonify({
+        "PLAYWRIGHT_BROWSERS_PATH": os.getenv("PLAYWRIGHT_BROWSERS_PATH"),
+        "cache_exists": os.path.exists("/opt/render/.cache/ms-playwright"),
+        "project_exists": os.path.exists("/opt/render/project/.playwright"),
+        "chromium_exists": os.path.exists(
+            "/opt/render/project/.playwright/chromium-1187"
+        )
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
