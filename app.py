@@ -1,12 +1,10 @@
 import os
 import json
 import re
-import smtplib
+import requests
 import logging
 import threading
 from urllib.parse import urljoin
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from datetime import datetime
 
 from flask import Flask, jsonify
@@ -26,9 +24,8 @@ log = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-GMAIL_USER = os.getenv("GMAIL_USER")
-GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
-RECIPIENT = os.getenv("RECIPIENT_EMAIL")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 OFERTAS_URL = "https://mercoapp.com/categoria-producto/ofertas/"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -43,16 +40,17 @@ CHROMIUM_PATH = os.getenv(
 
 def validar_configuracion():
     faltantes = []
-    if not GMAIL_USER:
-        faltantes.append("GMAIL_USER")
-    if not GMAIL_PASSWORD:
-        faltantes.append("GMAIL_PASSWORD")
-    if not RECIPIENT:
-        faltantes.append("RECIPIENT_EMAIL")
+
+    if not TELEGRAM_BOT_TOKEN:
+        faltantes.append("TELEGRAM_BOT_TOKEN")
+
+    if not TELEGRAM_CHAT_ID:
+        faltantes.append("TELEGRAM_CHAT_ID")
 
     if faltantes:
-        log.warning(f"Faltan variables de entorno: {', '.join(faltantes)}")
-
+        log.warning(
+            f"Faltan variables de entorno: {', '.join(faltantes)}"
+        )
 
 def parsear_precio(texto):
     if not texto:
@@ -399,28 +397,64 @@ def construir_email_html(nuevas, precio_baja, precio_sube, todas):
 </html>"""
 
 
-def enviar_email(asunto, html):
-    if not GMAIL_USER or not GMAIL_PASSWORD or not RECIPIENT:
-        raise RuntimeError("Faltan variables de entorno para enviar correo.")
+def enviar_telegram(mensaje):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        raise RuntimeError(
+            "Faltan TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID"
+        )
 
-    log.info("Preparando email...")
+    url = (
+        f"https://api.telegram.org/bot"
+        f"{TELEGRAM_BOT_TOKEN}/sendMessage"
+    )
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = asunto
-    msg["From"] = GMAIL_USER
-    msg["To"] = RECIPIENT
-    msg.attach(MIMEText(html, "html", "utf-8"))
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": mensaje,
+        "parse_mode": "HTML"
+    }
 
-    log.info("Conectando a Gmail...")
+    r = requests.post(url, json=payload, timeout=30)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
-        log.info("Login Gmail...")
-        server.login(GMAIL_USER, GMAIL_PASSWORD)
-        log.info("Enviando correo...")
-        server.sendmail(GMAIL_USER, RECIPIENT, msg.as_string())
+    if not r.ok:
+        raise RuntimeError(
+            f"Telegram respondió: {r.text}"
+        )
 
-    log.info(f"Email enviado a {RECIPIENT}")
+    log.info("Mensaje enviado a Telegram")
 
+
+def construir_mensaje_telegram(
+    nuevas,
+    precio_baja,
+    precio_sube,
+    total
+):
+    partes = []
+
+    partes.append("🛒 <b>MercoApp</b>")
+    partes.append("")
+    partes.append(f"📦 Total ofertas: {total}")
+
+    if nuevas:
+        partes.append(f"🆕 Nuevas ofertas: {len(nuevas)}")
+
+    if precio_baja:
+        partes.append(
+            f"📉 Bajaron de precio: {len(precio_baja)}"
+        )
+
+    if precio_sube:
+        partes.append(
+            f"📈 Subieron de precio: {len(precio_sube)}"
+        )
+
+    partes.append("")
+    partes.append(
+        "🔗 https://mercoapp.com/categoria-producto/ofertas/"
+    )
+
+    return "\n".join(partes)
 
 def revisar_ofertas():
     log.info("=== Revisión MercoApp iniciada ===")
@@ -455,8 +489,14 @@ def revisar_ofertas():
 
     asunto = "🛒 MercoApp · " + " | ".join(partes_asunto)
 
-    html = construir_email_html(nuevas, precio_baja, precio_sube, actual)
-    enviar_email(asunto, html)
+    mensaje = construir_mensaje_telegram(
+    nuevas,
+    precio_baja,
+    precio_sube,
+    len(actual)
+    )
+
+    enviar_telegram(mensaje)
 
     guardar_estado(actual)
 
