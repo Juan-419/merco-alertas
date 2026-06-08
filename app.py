@@ -404,10 +404,12 @@ def construir_mensaje_telegram(nuevas, precio_baja, precio_sube, total):
     if nuevas:
         partes.append(f"🆕 Nuevas ofertas ({len(nuevas)}):")
         for p in list(nuevas.values())[:10]:  # límite para no saturar Telegram
-            partes.append(f"• {p['nombre']}")
-            partes.append(f"  💰 {p['precio']}")
-            partes.append(f"  🔗 {p['url']}")
-            partes.append("")
+            nombre = nombre = ( p.get("nombre") or p.get("title") or p.get("producto") or "Sin nombre")
+            precio = p.get("precio") or p.get("price") or "Sin precio"
+            url = p.get("url") or p.get("link") or ""
+            partes.append(f"• {nombre}")
+            partes.append(f"  💰 {precio}")
+            partes.append(f"  🔗 {url}")
 
     if precio_baja:
         partes.append(f"📉 Bajaron precio: {len(precio_baja)}")
