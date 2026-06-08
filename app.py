@@ -393,36 +393,30 @@ def enviar_telegram(mensaje):
         log.error(f"Error enviando Telegram: {e}")
 
 
-def construir_mensaje_telegram(
-    nuevas,
-    precio_baja,
-    precio_sube,
-    total
-):
+def construir_mensaje_telegram(nuevas, precio_baja, precio_sube, total):
     partes = []
 
     partes.append("🛒 <b>MercoApp</b>")
     partes.append("")
     partes.append(f"📦 Total ofertas: {total}")
+    partes.append("")
 
     if nuevas:
-        partes.append(f"🆕 Nuevas ofertas: {len(nuevas)}")
+        partes.append(f"🆕 Nuevas ofertas ({len(nuevas)}):")
+        for p in nuevas[:10]:  # límite para no saturar Telegram
+            partes.append(f"• {p['nombre']}")
+            partes.append(f"  💰 {p['precio']}")
+            partes.append(f"  🔗 {p['url']}")
+            partes.append("")
 
     if precio_baja:
-        partes.append(
-            f"📉 Bajaron de precio: {len(precio_baja)}"
-        )
+        partes.append(f"📉 Bajaron precio: {len(precio_baja)}")
 
     if precio_sube:
-        partes.append(
-            f"📈 Subieron de precio: {len(precio_sube)}"
-        )
+        partes.append(f"📈 Subieron precio: {len(precio_sube)}")
 
     partes.append("")
-    partes.append(
-        "🔗 https://mercoapp.com/categoria-producto/ofertas/"
-    )
-
+    partes.append("🔗 https://mercoapp.com/categoria-producto/ofertas/")
 
     return "\n".join(partes)
 
