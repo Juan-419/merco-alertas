@@ -1,4 +1,4 @@
 flask==3.0.3
 gunicorn==22.0.0
-playwright==1.49.0
+playwright==1.55.0
 pytz==2024.1
