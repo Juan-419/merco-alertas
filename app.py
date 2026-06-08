@@ -403,7 +403,7 @@ def construir_mensaje_telegram(nuevas, precio_baja, precio_sube, total):
 
     if nuevas:
         partes.append(f"🆕 Nuevas ofertas ({len(nuevas)}):")
-        for p in nuevas[:10]:  # límite para no saturar Telegram
+        for p in list(nuevas.values())[:10]:  # límite para no saturar Telegram
             partes.append(f"• {p['nombre']}")
             partes.append(f"  💰 {p['precio']}")
             partes.append(f"  🔗 {p['url']}")
