@@ -65,12 +65,29 @@ def guardar_estado(ofertas):
 
 def scrapear_ofertas():
     productos = {}
+
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+
+            chromium_path = (
+                "/opt/render/project/.playwright/"
+                "chromium-1187/chrome-linux/chrome"
             )
+
+            log.info(f"Usando Chromium: {chromium_path}")
+
+            browser = p.chromium.launch(
+                executable_path=chromium_path,
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-blink-features=AutomationControlled",
+                ],
+            )
+
             context = browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Linux; Android 11; Pixel 5) "
@@ -80,47 +97,112 @@ def scrapear_ofertas():
                 locale="es-CO",
                 viewport={"width": 390, "height": 844},
             )
+
             page = context.new_page()
-            page.goto("https://mercoapp.com/", wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(2000)
-            page.goto(OFERTAS_URL, wait_until="networkidle", timeout=30000)
-            page.wait_for_timeout(3000)
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+
+            page.goto(
+                "https://mercoapp.com/",
+                wait_until="domcontentloaded",
+                timeout=30000
+            )
+
             page.wait_for_timeout(2000)
 
-            items = page.query_selector_all("li.product, article.product")
-            log.info(f"Elementos producto encontrados: {len(items)}")
+            page.goto(
+                OFERTAS_URL,
+                wait_until="networkidle",
+                timeout=30000
+            )
+
+            page.wait_for_timeout(3000)
+
+            page.evaluate(
+                "window.scrollTo(0, document.body.scrollHeight)"
+            )
+
+            page.wait_for_timeout(2000)
+
+            items = page.query_selector_all(
+                "li.product, article.product"
+            )
+
+            log.info(
+                f"Elementos producto encontrados: {len(items)}"
+            )
 
             for item in items:
-                nombre_tag   = item.query_selector(".woocommerce-loop-product__title, h2, h3")
-                precio_ins   = item.query_selector("ins .woocommerce-Price-amount, ins bdi")
-                precio_del   = item.query_selector("del .woocommerce-Price-amount, del bdi")
-                precio_unico = item.query_selector(".woocommerce-Price-amount:not(ins *):not(del *), bdi:not(ins *):not(del *)")
-                link_tag     = item.query_selector("a.woocommerce-loop-product__link, a")
-                img_tag      = item.query_selector("img")
+
+                nombre_tag = item.query_selector(
+                    ".woocommerce-loop-product__title, h2, h3"
+                )
+
+                precio_ins = item.query_selector(
+                    "ins .woocommerce-Price-amount, ins bdi"
+                )
+
+                precio_del = item.query_selector(
+                    "del .woocommerce-Price-amount, del bdi"
+                )
+
+                precio_unico = item.query_selector(
+                    ".woocommerce-Price-amount:not(ins *):not(del *), "
+                    "bdi:not(ins *):not(del *)"
+                )
+
+                link_tag = item.query_selector(
+                    "a.woocommerce-loop-product__link, a"
+                )
+
+                img_tag = item.query_selector("img")
 
                 if not nombre_tag:
                     continue
 
                 nombre = nombre_tag.inner_text().strip()
-                precio_nuevo_txt    = precio_ins.inner_text().strip()   if precio_ins   else None
-                precio_original_txt = precio_del.inner_text().strip()   if precio_del   else None
-                precio_unico_txt    = precio_unico.inner_text().strip() if precio_unico else None
-                precio_display      = precio_nuevo_txt or precio_unico_txt
+
+                precio_nuevo_txt = (
+                    precio_ins.inner_text().strip()
+                    if precio_ins else None
+                )
+
+                precio_original_txt = (
+                    precio_del.inner_text().strip()
+                    if precio_del else None
+                )
+
+                precio_unico_txt = (
+                    precio_unico.inner_text().strip()
+                    if precio_unico else None
+                )
+
+                precio_display = (
+                    precio_nuevo_txt or precio_unico_txt
+                )
 
                 productos[nombre] = {
-                    "precio_nuevo":    precio_nuevo_txt,
+                    "precio_nuevo": precio_nuevo_txt,
                     "precio_original": precio_original_txt,
-                    "precio_display":  precio_display,
-                    "link":  link_tag.get_attribute("href") if link_tag else OFERTAS_URL,
-                    "imagen": (img_tag.get_attribute("src") or img_tag.get_attribute("data-src", "") if img_tag else ""),
+                    "precio_display": precio_display,
+                    "link": (
+                        link_tag.get_attribute("href")
+                        if link_tag
+                        else OFERTAS_URL
+                    ),
+                    "imagen": (
+                        img_tag.get_attribute("src")
+                        or img_tag.get_attribute("data-src", "")
+                        if img_tag
+                        else ""
+                    ),
                 }
 
             browser.close()
+
     except Exception as e:
         log.error(f"Error en scraping: {e}")
 
     log.info(f"Ofertas scrapeadas: {len(productos)}")
+
     return productos
 
 
@@ -377,6 +459,38 @@ def debug_chromium():
     return jsonify({
         "archivos": encontrados[:200]
     })
+
+@app.route("/test-browser")
+def test_browser():
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+
+            browser = p.chromium.launch(
+                executable_path="/opt/render/project/.playwright/chromium-1187/chrome-linux/chrome",
+                headless=True,
+                args=["--no-sandbox"]
+            )
+
+            page = browser.new_page()
+            page.goto("https://google.com")
+
+            title = page.title()
+
+            browser.close()
+
+            return jsonify({
+                "status": "ok",
+                "title": title
+            })
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "detalle": str(e)
+        })
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
