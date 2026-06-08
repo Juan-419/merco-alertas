@@ -3,7 +3,6 @@ import json
 import re
 import requests
 import logging
-import threading
 from urllib.parse import urljoin
 from datetime import datetime
 
@@ -323,34 +322,6 @@ def construir_seccion(titulo, icono, color, items, tipo):
     {tabla}
     """
 
-
-def construir_email_html(nuevas, precio_baja, precio_sube, todas):
-    bogota = pytz.timezone("America/Bogota")
-    fecha = datetime.now(bogota).strftime("%d/%m/%Y %I:%M %p")
-
-    total_cambios = len(nuevas) + len(precio_baja) + len(precio_sube)
-
-    if total_cambios == 0:
-        resumen_badge = "Sin novedades esta revisión 😴"
-    else:
-        partes = []
-        if nuevas:
-            partes.append(f"{len(nuevas)} nueva{'s' if len(nuevas) != 1 else ''}")
-        if precio_baja:
-            partes.append(f"{len(precio_baja)} bajaron de precio")
-        if precio_sube:
-            partes.append(f"{len(precio_sube)} subieron de precio")
-        resumen_badge = " · ".join(partes)
-
-    sec_nuevas = construir_seccion("Nuevas ofertas", "🆕", "#e53935", nuevas, "nueva")
-    sec_baja = construir_seccion("Precios que bajaron", "📉", "#2e7d32", precio_baja, "baja")
-    sec_sube = construir_seccion("Precios que subieron", "📈", "#b71c1c", precio_sube, "sube")
-
-    sin_nov = (
-        "<p style='color:#aaa;font-size:14px;margin-top:24px;'>Sin cambios en ofertas.</p>"
-        if total_cambios == 0 else ""
-    )
-
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -463,7 +434,7 @@ def revisar_ofertas():
     actual = scrapear_ofertas()
 
     if not actual:
-        log.warning("No se obtuvieron ofertas. No se envía correo.")
+        log.warning("No se obtuvieron ofertas. No se envía notificación.")
         return {
             "status": "sin_datos",
             "mensaje": "No se pudieron scrapear ofertas."
@@ -472,22 +443,12 @@ def revisar_ofertas():
     nuevas, precio_baja, precio_sube = detectar_cambios(anterior, actual)
 
     if not (nuevas or precio_baja or precio_sube):
-        log.info("Sin cambios detectados. No se envía correo.")
+        log.info("Sin cambios detectados. No se envía notificación.")
         guardar_estado(actual)
         return {
             "status": "sin_cambios",
             "total": len(actual)
         }
-
-    partes_asunto = []
-    if nuevas:
-        partes_asunto.append(f"{len(nuevas)} nueva{'s' if len(nuevas) != 1 else ''}")
-    if precio_baja:
-        partes_asunto.append(f"{len(precio_baja)} bajaron 📉")
-    if precio_sube:
-        partes_asunto.append(f"{len(precio_sube)} subieron 📈")
-
-    asunto = "🛒 MercoApp · " + " | ".join(partes_asunto)
 
     mensaje = construir_mensaje_telegram(
     nuevas,
