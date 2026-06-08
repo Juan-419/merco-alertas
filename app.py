@@ -369,14 +369,10 @@ def construir_seccion(titulo, icono, color, items, tipo):
 
 def enviar_telegram(mensaje):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        raise RuntimeError(
-            "Faltan TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID"
-        )
+        log.warning("Telegram no configurado, se omite envío")
+        return
 
-    url = (
-        f"https://api.telegram.org/bot"
-        f"{TELEGRAM_BOT_TOKEN}/sendMessage"
-    )
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -384,14 +380,17 @@ def enviar_telegram(mensaje):
         "parse_mode": "HTML"
     }
 
-    r = requests.post(url, json=payload, timeout=30)
+    try:
+        r = requests.post(url, json=payload, timeout=30)
 
-    if not r.ok:
-        raise RuntimeError(
-            f"Telegram respondió: {r.text}"
-        )
+        if not r.ok:
+            log.error(f"Telegram falló: {r.text}")
+            return
 
-    log.info("Mensaje enviado a Telegram")
+        log.info("Mensaje enviado a Telegram")
+
+    except Exception as e:
+        log.error(f"Error enviando Telegram: {e}")
 
 
 def construir_mensaje_telegram(
