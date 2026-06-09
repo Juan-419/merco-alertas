@@ -7,7 +7,7 @@ import threading
 from urllib.parse import urljoin
 from datetime import datetime
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template_string
 from playwright.sync_api import sync_playwright
 import pytz
 
@@ -142,8 +142,11 @@ def scrapear_ofertas():
 
                 page.wait_for_timeout(5000)
 
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                page.wait_for_timeout(2000)
+                try:
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.wait_for_timeout(2000)
+                except Exception:
+                    log.warning("Scroll falló (redirección), continuando...")
 
                 # Espera razonable para que aparezcan productos
                 try:
@@ -531,16 +534,447 @@ _hilo_scheduler.start()
 log.info("Scheduler activo → cada sábado 10:00 a.m. (Bogotá)")
 
 
+DASHBOARD_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MercoApp Bot</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --rojo:    #e53935;
+      --rojo-dk: #b71c1c;
+      --verde:   #2e7d32;
+      --bg:      #f7f7f8;
+      --card:    #ffffff;
+      --borde:   #ebebeb;
+      --texto:   #1a1a1a;
+      --sub:     #6b7280;
+      --radio:   14px;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--texto);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--rojo);
+      padding: 28px 32px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    header .logo { font-size: 2rem; }
+    header h1 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -.5px;
+    }
+    header p {
+      font-size: .8rem;
+      color: rgba(255,255,255,.75);
+      margin-top: 2px;
+    }
+    .badge-live {
+      margin-left: auto;
+      background: rgba(255,255,255,.2);
+      color: #fff;
+      font-size: .7rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 99px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .badge-live::before {
+      content: '';
+      width: 7px; height: 7px;
+      background: #69f0ae;
+      border-radius: 50%;
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: .3; }
+    }
+
+    /* ── Layout ── */
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }
+
+    /* ── Stats ── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--borde);
+      border-radius: var(--radio);
+      padding: 20px 22px;
+    }
+    .stat .num {
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--rojo);
+    }
+    .stat .lbl {
+      font-size: .78rem;
+      color: var(--sub);
+      margin-top: 5px;
+      font-weight: 500;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--borde);
+      border-radius: var(--radio);
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    .card h2 {
+      font-size: .95rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    /* ── Productos ── */
+    .productos { display: flex; flex-direction: column; gap: 10px; }
+    .producto {
+      display: grid;
+      grid-template-columns: 52px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--bg);
+      border: 1px solid var(--borde);
+      transition: border-color .15s;
+    }
+    .producto:hover { border-color: #d0d0d0; }
+    .producto img {
+      width: 52px; height: 52px;
+      object-fit: cover;
+      border-radius: 8px;
+      background: #f0f0f0;
+    }
+    .producto img.placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+    }
+    .prod-nombre {
+      font-size: .85rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .prod-precio {
+      font-size: .8rem;
+      color: var(--sub);
+      margin-top: 2px;
+    }
+    .prod-precio b { color: var(--rojo); font-weight: 700; }
+    .prod-link {
+      font-size: .75rem;
+      color: var(--rojo);
+      text-decoration: none;
+      font-weight: 600;
+      white-space: nowrap;
+      padding: 5px 10px;
+      border: 1.5px solid var(--rojo);
+      border-radius: 7px;
+      transition: all .15s;
+    }
+    .prod-link:hover {
+      background: var(--rojo);
+      color: #fff;
+    }
+
+    /* ── Acciones ── */
+    .acciones { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 11px 20px;
+      border-radius: 9px;
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      text-decoration: none;
+      transition: all .15s;
+    }
+    .btn-primary {
+      background: var(--rojo);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--rojo-dk); }
+    .btn-secondary {
+      background: var(--bg);
+      color: var(--texto);
+      border: 1.5px solid var(--borde);
+    }
+    .btn-secondary:hover { border-color: #bbb; }
+
+    /* ── Info row ── */
+    .info-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--borde);
+      font-size: .85rem;
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-row .key { color: var(--sub); font-weight: 500; }
+    .info-row .val { font-weight: 600; text-align: right; }
+    .info-row a { color: var(--rojo); text-decoration: none; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      background: #1a1a1a;
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: .85rem;
+      font-weight: 500;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: all .25s;
+      pointer-events: none;
+      z-index: 99;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+
+    #spinner {
+      display: none;
+      width: 15px; height: 15px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 500px) {
+      header { padding: 20px 16px; }
+      main { padding: 20px 14px 50px; }
+      .producto { grid-template-columns: 44px 1fr; }
+      .prod-link { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="logo">🛒</span>
+  <div>
+    <h1>MercoApp Bot</h1>
+    <p>Monitor de ofertas semanal</p>
+  </div>
+  <span class="badge-live">En línea</span>
+</header>
+
+<main>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat">
+      <div class="num" id="total-ofertas">…</div>
+      <div class="lbl">Productos en oferta</div>
+    </div>
+    <div class="stat">
+      <div class="num" style="color:#1a1a1a" id="proxima">Sábado</div>
+      <div class="lbl">Próxima revisión</div>
+    </div>
+    <div class="stat">
+      <div class="num" style="color:var(--verde)" id="ultima-rev">—</div>
+      <div class="lbl">Última revisión</div>
+    </div>
+  </div>
+
+  <!-- Acciones -->
+  <div class="card">
+    <h2>⚡ Acciones</h2>
+    <div class="acciones">
+      <button class="btn btn-primary" onclick="revisarAhora()">
+        <span id="spinner"></span>
+        <span id="btn-txt">🔍 Revisar ahora</span>
+      </button>
+      <a class="btn btn-secondary" href="/estado">📦 Ver caché JSON</a>
+      <a class="btn btn-secondary" href="https://mercoapp.com/categoria-producto/ofertas/" target="_blank">🌐 Ir a MercoApp</a>
+    </div>
+    <p id="resultado-txt" style="margin-top:12px;font-size:.83rem;color:var(--sub);min-height:18px;"></p>
+  </div>
+
+  <!-- Ofertas en caché -->
+  <div class="card">
+    <h2>📦 Ofertas actuales en caché</h2>
+    <div class="productos" id="lista-productos">
+      <p style="color:var(--sub);font-size:.85rem;">Cargando…</p>
+    </div>
+  </div>
+
+  <!-- Info -->
+  <div class="card">
+    <h2>ℹ️ Configuración</h2>
+    <div class="info-row">
+      <span class="key">URL monitorizada</span>
+      <span class="val"><a href="https://mercoapp.com/categoria-producto/ofertas/" target="_blank">mercoapp.com/ofertas</a></span>
+    </div>
+    <div class="info-row">
+      <span class="key">Horario automático</span>
+      <span class="val">Sábados 10:00 a.m. (Bogotá)</span>
+    </div>
+    <div class="info-row">
+      <span class="key">Notificaciones</span>
+      <span class="val">Telegram 📲</span>
+    </div>
+    <div class="info-row">
+      <span class="key">Detecta</span>
+      <span class="val">Nuevas · Bajadas · Subidas de precio</span>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+  // ── Cargar estado ──────────────────────────────────────────────────────────
+  async function cargarEstado() {
+    try {
+      const r = await fetch('/estado');
+      const data = await r.json();
+      document.getElementById('total-ofertas').textContent = data.total;
+
+      const lista = document.getElementById('lista-productos');
+
+      if (data.total === 0) {
+        lista.innerHTML = '<p style="color:var(--sub);font-size:.85rem;">Sin datos en caché. Haz una revisión primero.</p>';
+        return;
+      }
+
+      lista.innerHTML = Object.entries(data.ofertas).map(([nombre, d]) => {
+        const precio = d.precio_nuevo || d.precio_display || '—';
+        const original = d.precio_original ? `<s style="opacity:.5">${d.precio_original}</s> ` : '';
+        const link = d.link || '#';
+        const img = d.imagen && d.imagen.startsWith('http')
+          ? `<img src="${d.imagen}" alt="" onerror="this.style.display='none'">`
+          : `<div style="width:52px;height:52px;background:#f0f0f0;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.3rem">🛍️</div>`;
+        return `
+          <div class="producto">
+            ${img}
+            <div>
+              <div class="prod-nombre">${nombre}</div>
+              <div class="prod-precio">${original}<b>${precio}</b></div>
+            </div>
+            <a class="prod-link" href="${link}" target="_blank">Ver →</a>
+          </div>`;
+      }).join('');
+
+      // Última revisión aproximada
+      document.getElementById('ultima-rev').textContent = '✓ Hoy';
+    } catch(e) {
+      document.getElementById('lista-productos').innerHTML =
+        '<p style="color:#e53935;font-size:.85rem;">Error cargando caché.</p>';
+    }
+  }
+
+  // ── Revisar ahora ──────────────────────────────────────────────────────────
+  async function revisarAhora() {
+    const btn = document.querySelector('.btn-primary');
+    const spinner = document.getElementById('spinner');
+    const txt = document.getElementById('btn-txt');
+    const res = document.getElementById('resultado-txt');
+
+    btn.disabled = true;
+    spinner.style.display = 'block';
+    txt.textContent = 'Revisando…';
+    res.textContent = 'Esto tarda ~1 minuto, espera…';
+
+    try {
+      const r = await fetch('/revisar-ahora');
+      const data = await r.json();
+
+      if (data.status === 'ok') {
+        res.textContent = `✅ Listo — ${data.nuevas} nuevas · ${data.bajaron} bajaron · ${data.subieron} subieron`;
+        toast('¡Revisión completada! Revisa Telegram 📲');
+        cargarEstado();
+      } else if (data.status === 'sin_cambios') {
+        res.textContent = `Sin novedades — ${data.total} productos en oferta`;
+        toast('Sin cambios esta vez 😴');
+      } else if (data.status === 'ocupado') {
+        res.textContent = 'Ya hay una revisión en curso, espera un momento.';
+      } else {
+        res.textContent = `⚠️ ${data.mensaje || data.detalle || 'Error desconocido'}`;
+      }
+    } catch(e) {
+      res.textContent = '❌ Error de conexión.';
+    } finally {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+      txt.textContent = '🔍 Revisar ahora';
+    }
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3500);
+  }
+
+  // ── Próxima revisión ───────────────────────────────────────────────────────
+  function proximaRevision() {
+    const ahora = new Date();
+    const diasHastaSabado = (6 - ahora.getDay() + 7) % 7 || 7;
+    const sabado = new Date(ahora);
+    sabado.setDate(ahora.getDate() + diasHastaSabado);
+    sabado.setHours(10, 0, 0, 0);
+    const diff = sabado - ahora;
+    const dias = Math.floor(diff / 86400000);
+    const horas = Math.floor((diff % 86400000) / 3600000);
+    document.getElementById('proxima').textContent =
+      dias > 0 ? `En ${dias}d ${horas}h` : `En ${horas}h`;
+  }
+
+  cargarEstado();
+  proximaRevision();
+</script>
+</body>
+</html>"""
+
+
 @app.route("/")
 def index():
-    return jsonify({
-        "status": "activo",
-        "descripcion": "Bot de alertas de ofertas MercoApp",
-        "detecta": ["nuevas ofertas", "bajadas de precio", "subidas de precio"],
-        "ofertas_en_cache": len(cargar_estado()),
-        "url_monitorizada": OFERTAS_URL,
-        "nota": "Usa /revisar-ahora para disparar una revisión manual."
-    })
+    return render_template_string(DASHBOARD_HTML)
 
 @app.route("/revisar-ahora")
 def revisar_ahora():
