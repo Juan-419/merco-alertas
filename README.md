@@ -1,6 +1,16 @@
 # 🛒 MercoApp Alertas — Bot de ofertas semanales
 
-Bot que revisa automáticamente las ofertas de [mercoapp.com](https://mercoapp.com/categoria-producto/ofertas/) cada **sábado a las 10:00 a.m. (hora Bogotá)** y te notifica por correo si hay productos nuevos en descuento.
+Bot que revisa automáticamente las ofertas de [mercoapp.com](https://mercoapp.com/categoria-producto/ofertas/) cada **sábado a las 10:00 a.m. (hora Bogotá)** y te notifica por Telegram con foto, precio y link de cada producto.
+
+---
+
+## ¿Qué detecta?
+
+- 🆕 **Nuevas ofertas** — productos que no estaban la semana pasada
+- 📉 **Precios que bajaron** — con variación porcentual
+- 📈 **Precios que subieron** — para que no te sorprenda
+
+Cada producto llega como mensaje individual con su foto, nombre, precio anterior/actual y link directo.
 
 ---
 
@@ -22,55 +32,63 @@ git push -u origin main
 2. Conecta tu repositorio de GitHub
 3. Render detecta el `render.yaml` automáticamente
 
-### 3. Configura las variables de entorno
+### 3. Variables de entorno
 
 En el dashboard de Render → **Environment**, agrega:
 
-| Variable          | Valor                                      |
-|-------------------|--------------------------------------------|
-| `GMAIL_USER`      | `tucorreo@gmail.com`                       |
-| `GMAIL_PASSWORD`  | App Password de 16 caracteres (sin espacios) |
-| `RECIPIENT_EMAIL` | correo donde quieres recibir las alertas   |
+| Variable | Valor |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Token de tu bot (lo da @BotFather) |
+| `TELEGRAM_CHAT_ID` | Tu chat ID de Telegram |
 
-### 4. Obtener el App Password de Gmail
+### 4. Cómo obtener el token y chat ID de Telegram
 
-1. Ve a tu cuenta Google → **Seguridad**
-2. Activa **Verificación en dos pasos** (si no la tienes)
-3. Busca **"Contraseñas de aplicación"**
-4. Crea una nueva → selecciona "Correo" y "Windows" → copia las 16 letras
+**Token:**
+1. Abre Telegram y busca **@BotFather**
+2. Escribe `/newbot` y sigue los pasos
+3. Te da un token tipo `7123456789:AAF...`
+
+**Chat ID:**
+1. Escríbele un mensaje a tu bot
+2. Entra a `https://api.telegram.org/bot<TU_TOKEN>/getUpdates`
+3. Busca el campo `"id"` dentro de `"chat"`
 
 ---
 
-## 🧪 Probar manualmente
+## 🧪 Endpoints
 
-Una vez desplegado, visita:
+| Endpoint | Descripción |
+|---|---|
+| `/` | Estado general del bot |
+| `/revisar-ahora` | Fuerza una revisión inmediata |
+| `/estado` | Lista de ofertas en caché |
+| `/healthz` | Health check |
 
+Una vez desplegado, prueba entrando a:
 ```
 https://tu-app.onrender.com/revisar-ahora
 ```
 
-Esto fuerza una revisión inmediata y te envía el correo. Perfecto para verificar que todo funciona.
-
-### Otros endpoints
-
-| Endpoint        | Descripción                              |
-|-----------------|------------------------------------------|
-| `/`             | Estado general del bot                   |
-| `/estado`       | Lista de ofertas actualmente en caché    |
-| `/revisar-ahora`| Fuerza revisión inmediata + envío de email |
-
 ---
 
-## ⚠️ Nota sobre el plan Free de Render
+## ⏰ UptimeRobot (importante)
 
-Render en plan gratuito **duerme el servicio** si no recibe tráfico por 15 minutos. Para que el scheduler funcione correctamente, se recomienda usar [UptimeRobot](https://uptimerobot.com) (gratis) para hacer ping a `/` cada 10 minutos.
+Render en plan gratuito duerme el servicio si no recibe tráfico por 15 minutos, lo que haría que el scheduler del sábado no funcione.
+
+**Solución gratis:**
+1. Crea cuenta en [uptimerobot.com](https://uptimerobot.com)
+2. New Monitor → HTTP(s)
+3. URL: `https://tu-app.onrender.com/healthz`
+4. Intervalo: **cada 5 minutos**
+
+Listo, el bot siempre estará despierto.
 
 ---
 
 ## 📦 Stack
 
 - **Flask** — servidor web
-- **APScheduler** — programación del job semanal
-- **BeautifulSoup4** — scraping de MercoApp
-- **Gmail SMTP** — envío de correos
+- **Playwright + Chromium** — scraping (bypasea Cloudflare)
+- **Telegram Bot API** — notificaciones con foto
+- **Threading** — scheduler semanal sin dependencias externas
 - **Gunicorn** — servidor de producción
