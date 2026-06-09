@@ -87,8 +87,8 @@ Listo, el bot siempre estará despierto.
 
 ## 📦 Stack
 
-- **Flask** — servidor web
+- **Flask** — servidor web con dashboard HTML integrado
 - **Playwright + Chromium** — scraping (bypasea Cloudflare)
-- **Telegram Bot API** — notificaciones con foto
-- **Threading** — scheduler semanal sin dependencias externas
+- **Telegram Bot API** — notificaciones con foto, precio y link por producto
+- **Threading + pytz** — scheduler semanal sin dependencias externas
 - **Gunicorn** — servidor de producción
