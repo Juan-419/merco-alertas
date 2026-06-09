@@ -321,104 +321,124 @@ def construir_seccion(titulo, icono, color, items, tipo):
     {tabla}
     """
 
-    return f"""<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-</head>
-<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif;">
-<table width="100%" bgcolor="#f5f5f5" cellpadding="0" cellspacing="0">
-<tr>
-  <td align="center" style="padding:30px 10px;">
-    <table width="640" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);max-width:100%;">
-      <tr>
-        <td style="background:#e53935;padding:28px 32px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:22px;">🛒 MercoApp · Alerta de Ofertas</h1>
-          <p style="color:rgba(255,255,255,.85);margin:6px 0 0;font-size:13px;">{fecha}</p>
-        </td>
-      </tr>
-      <tr>
-        <td style="background:#fff8f8;padding:16px 32px;border-bottom:1px solid #fdecea;">
-          <p style="margin:0;color:#555;font-size:14px;">📦 Total en oferta: <strong>{len(todas)}</strong> &nbsp;·&nbsp; {resumen_badge}</p>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:24px 32px;">
-          {sec_nuevas}
-          {sec_baja}
-          {sec_sube}
-          {sin_nov}
-          <div style="margin-top:36px;text-align:center;">
-            <a href="{OFERTAS_URL}" style="background:#e53935;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">Ver todas las ofertas →</a>
-          </div>
-        </td>
-      </tr>
-      <tr>
-        <td style="background:#fafafa;padding:16px 32px;text-align:center;color:#bbb;font-size:12px;border-top:1px solid #f0f0f0;">
-          Bot automático de MercoApp 🤖
-        </td>
-      </tr>
-    </table>
-  </td>
-</tr>
-</table>
-</body>
-</html>"""
+
+def _telegram_api(method, payload):
+    """Llama a cualquier método de la API de Telegram."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        log.warning("Telegram no configurado, se omite envío")
+        return False
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
+    try:
+        r = requests.post(url, json=payload, timeout=30)
+        if not r.ok:
+            log.error(f"Telegram {method} falló: {r.text}")
+            return False
+        return True
+    except Exception as e:
+        log.error(f"Error en Telegram {method}: {e}")
+        return False
 
 
 def enviar_telegram(mensaje):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        log.warning("Telegram no configurado, se omite envío")
-        return
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-
-    payload = {
+    """Envía un mensaje de texto simple."""
+    _telegram_api("sendMessage", {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": mensaje,
-        "parse_mode": "HTML"
-    }
-
-    try:
-        r = requests.post(url, json=payload, timeout=30)
-
-        if not r.ok:
-            log.error(f"Telegram falló: {r.text}")
-            return
-
-        log.info("Mensaje enviado a Telegram")
-
-    except Exception as e:
-        log.error(f"Error enviando Telegram: {e}")
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    })
+    log.info("Mensaje enviado a Telegram")
 
 
-def construir_mensaje_telegram(nuevas, precio_baja, precio_sube, total):
-    partes = []
+def enviar_telegram_foto(imagen_url, caption):
+    """
+    Envía una foto con caption. Si la URL de imagen falla,
+    cae back a sendMessage con el caption igual.
+    """
+    ok = _telegram_api("sendPhoto", {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "photo": imagen_url,
+        "caption": caption,
+        "parse_mode": "HTML",
+    })
+    if not ok:
+        # Fallback: mensaje de texto si la foto no cargó
+        _telegram_api("sendMessage", {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": caption,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": False,
+        })
 
-    partes.append("🛒 <b>MercoApp</b>")
-    partes.append("")
-    partes.append(f"📦 Total ofertas: {total}")
-    partes.append("")
+
+def _caption_producto(nombre, d, tipo):
+    """
+    Arma el caption HTML para un producto individual.
+    tipo: 'nueva' | 'baja' | 'sube'
+    """
+    link = d.get("link", OFERTAS_URL)
+
+    if tipo == "nueva":
+        precio_antes = d.get("precio_original")
+        precio_ahora = d.get("precio_nuevo") or d.get("precio_display") or "—"
+        encabezado = "🆕 <b>Nueva oferta</b>"
+        linea_precio = f"💰 Precio: <b>{precio_ahora}</b>"
+        if precio_antes:
+            linea_precio += f"\n<s>{precio_antes}</s>"
+
+    elif tipo == "baja":
+        encabezado = "📉 <b>Bajó de precio</b>"
+        linea_precio = (
+            f"💰 Antes: <s>{d.get('precio_antes_txt', '—')}</s>\n"
+            f"✅ Ahora: <b>{d.get('precio_ahora_txt', '—')}</b>  "
+            f"({d.get('variacion', '')})"
+        )
+    else:  # sube
+        encabezado = "📈 <b>Subió de precio</b>"
+        linea_precio = (
+            f"💰 Antes: {d.get('precio_antes_txt', '—')}\n"
+            f"⚠️ Ahora: <b>{d.get('precio_ahora_txt', '—')}</b>  "
+            f"({d.get('variacion', '')})"
+        )
+
+    return (
+        f"{encabezado}\n"
+        f"📦 {nombre}\n"
+        f"{linea_precio}\n"
+        f"🔗 <a href=\"{link}\">Ver producto</a>"
+    )
+
+
+def notificar_grupo(titulo, items, tipo):
+    """Envía un mensaje por cada producto del grupo, con foto si tiene."""
+    if not items:
+        return
+    # Encabezado del grupo
+    enviar_telegram(f"{titulo} — <b>{len(items)} producto{'s' if len(items)!=1 else ''}</b>")
+    for nombre, d in items.items():
+        caption = _caption_producto(nombre, d, tipo)
+        imagen  = d.get("imagen", "")
+        if imagen and imagen.startswith("http"):
+            enviar_telegram_foto(imagen, caption)
+        else:
+            enviar_telegram(caption)
+
+
+def construir_resumen_telegram(nuevas, precio_baja, precio_sube, total):
+    """Mensaje inicial con el resumen general."""
+    partes = ["🛒 <b>MercoApp · Revisión de ofertas</b>", ""]
+    partes.append(f"📦 Total en oferta: <b>{total}</b>")
+
+    if not (nuevas or precio_baja or precio_sube):
+        partes.append("Sin novedades esta semana 😴")
+        return "\n".join(partes)
 
     if nuevas:
-        partes.append(f"🆕 Nuevas ofertas ({len(nuevas)}):")
-        for p in list(nuevas.values())[:10]:  # límite para no saturar Telegram
-            nombre = nombre = ( p.get("nombre") or p.get("title") or p.get("producto") or "Sin nombre")
-            precio = p.get("precio") or p.get("price") or "Sin precio"
-            url = p.get("url") or p.get("link") or ""
-            partes.append(f"• {nombre}")
-            partes.append(f"  💰 {precio}")
-            partes.append(f"  🔗 {url}")
-
+        partes.append(f"🆕 Nuevas: <b>{len(nuevas)}</b>")
     if precio_baja:
-        partes.append(f"📉 Bajaron precio: {len(precio_baja)}")
-
+        partes.append(f"📉 Bajaron: <b>{len(precio_baja)}</b>")
     if precio_sube:
-        partes.append(f"📈 Subieron precio: {len(precio_sube)}")
-
-    partes.append("")
-    partes.append("🔗 https://mercoapp.com/categoria-producto/ofertas/")
+        partes.append(f"📈 Subieron: <b>{len(precio_sube)}</b>")
 
     return "\n".join(partes)
 
@@ -455,14 +475,13 @@ def revisar_ofertas():
                 "total": len(actual)
             }
 
-        mensaje = construir_mensaje_telegram(
-            nuevas,
-            precio_baja,
-            precio_sube,
-            len(actual)
-        )
+        # Resumen general
+        enviar_telegram(construir_resumen_telegram(nuevas, precio_baja, precio_sube, len(actual)))
 
-        enviar_telegram(mensaje)
+        # Un mensaje por producto con foto
+        notificar_grupo("🆕 Nuevas ofertas",      nuevas,      "nueva")
+        notificar_grupo("📉 Precios que bajaron", precio_baja, "baja")
+        notificar_grupo("📈 Precios que subieron", precio_sube, "sube")
 
         guardar_estado(actual)
 
@@ -484,6 +503,33 @@ def revisar_ofertas():
 
     finally:
         lock_revision.release()
+
+# ── Scheduler semanal (sábados 10:00 a.m. Bogotá) ────────────────────────────
+
+def _loop_scheduler():
+    bogota = pytz.timezone("America/Bogota")
+    ejecutado_hoy = None
+
+    while True:
+        ahora     = datetime.now(bogota)
+        es_sabado = ahora.weekday() == 5
+        es_hora   = ahora.hour == 10 and ahora.minute == 0
+        fecha_hoy = ahora.date()
+
+        if es_sabado and es_hora and ejecutado_hoy != fecha_hoy:
+            ejecutado_hoy = fecha_hoy
+            try:
+                revisar_ofertas()
+            except Exception as e:
+                log.error(f"Error en job programado: {e}")
+
+        import time
+        time.sleep(55)
+
+_hilo_scheduler = threading.Thread(target=_loop_scheduler, daemon=True)
+_hilo_scheduler.start()
+log.info("Scheduler activo → cada sábado 10:00 a.m. (Bogotá)")
+
 
 @app.route("/")
 def index():
