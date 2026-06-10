@@ -6,15 +6,13 @@ services:
     buildCommand: pip install -r requirements.txt && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/.playwright python -m playwright install chromium
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120
     envVars:
-      - key: GMAIL_USER
+      - key: TELEGRAM_BOT_TOKEN
         sync: false
-      - key: GMAIL_PASSWORD
-        sync: false
-      - key: RECIPIENT_EMAIL
+      - key: TELEGRAM_CHAT_ID
         sync: false
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: /opt/render/project/.playwright
       - key: STATE_FILE
         value: ofertas_state.json
-    healthCheckPath: /
+    healthCheckPath: /healthz
     plan: free
